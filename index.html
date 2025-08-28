@@ -1,746 +1,842 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>교직원 명예퇴직수당 관리 시스템</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body>
-    <div id="root"></div>
-    <script type="text/babel">
-        // 아이콘을 위한 간단한 SVG 컴포넌트들
-        const Calculator = () => <span>📊</span>;
-        const AlertCircle = () => <span>⚠️</span>;
-        const CheckCircle = () => <span>✅</span>;
-        const XCircle = () => <span>❌</span>;
-        const FileText = () => <span>📄</span>;
-        const Download = () => <span>💾</span>;
-        const UserPlus = () => <span>👤</span>;
-        const Info = () => <span>ℹ️</span>;
+import React, { useState, useEffect } from 'react';
+import { Calculator, AlertCircle, CheckCircle, XCircle, FileText, Download, UserPlus, Info } from 'lucide-react';
 
-        const RetirementBenefitSystem = () => {
-          const [employees, setEmployees] = React.useState([]);
-          const [formData, setFormData] = React.useState({
-            name: '',
-            employeeId: '',
-            department: '',
-            position: '',
-            hireDate: '',
-            retirementDate: '',
-            birthDate: '',
-            employeeType: 'professor',
-            monthlyPay1: '',
-            monthlyPay2: '',
-            monthlyPay3: '',
-            disqualifications: {
-              underDisciplinary: false,
-              disciplinaryPunishment: false,
-              criminalCase: false,
-              inappropriate: false
-            }
-          });
+const RetirementBenefitSystem = () => {
+  const [employees, setEmployees] = useState([]);
+  const [formData, setFormData] = useState({
+    name: '',
+    employeeId: '',
+    department: '',
+    position: '',
+    hireDate: '',
+    retirementDate: '',
+    birthDate: '',
+    employeeType: 'professor', // professor(교원), staff(직원)
+    monthlyPay1: '',
+    monthlyPay2: '',
+    monthlyPay3: '',
+    disqualifications: {
+      underDisciplinary: false,
+      disciplinaryPunishment: false,
+      criminalCase: false,
+      inappropriate: false
+    }
+  });
 
-          const [calculation, setCalculation] = React.useState(null);
-          const [errors, setErrors] = React.useState({});
+  const [calculation, setCalculation] = useState(null);
+  const [errors, setErrors] = useState({});
 
-          // 날짜 포맷팅 함수
-          const formatDateInput = (value, fieldName) => {
-            const numbers = value.replace(/[^0-9]/g, '');
-            const limited = numbers.slice(0, 8);
-            
-            let formatted = limited;
-            if (limited.length >= 4) {
-              formatted = limited.slice(0, 4);
-              if (limited.length >= 6) {
-                formatted += '.' + limited.slice(4, 6);
-                if (limited.length > 6) {
-                  formatted += '.' + limited.slice(6, 8);
-                }
-              } else if (limited.length > 4) {
-                formatted += '.' + limited.slice(4);
-              }
-            }
-            
-            setFormData({...formData, [fieldName]: formatted});
-          };
+  // 날짜 포맷팅 함수 (숫자만 입력받아 날짜 형식으로 변환)
+  const formatDateInput = (value, fieldName) => {
+    // 숫자만 추출
+    const numbers = value.replace(/[^0-9]/g, '');
+    
+    // 8자리 제한
+    const limited = numbers.slice(0, 8);
+    
+    // 포맷팅
+    let formatted = limited;
+    if (limited.length >= 4) {
+      formatted = limited.slice(0, 4);
+      if (limited.length >= 6) {
+        formatted += '.' + limited.slice(4, 6);
+        if (limited.length > 6) {
+          formatted += '.' + limited.slice(6, 8);
+        }
+      } else if (limited.length > 4) {
+        formatted += '.' + limited.slice(4);
+      }
+    }
+    
+    setFormData({...formData, [fieldName]: formatted});
+  };
 
-          // 날짜 파싱
-          const parseDate = (dateStr) => {
-            if (!dateStr) return null;
-            const cleaned = dateStr.replace(/[^0-9]/g, '');
-            if (cleaned.length !== 8) return null;
-            
-            const year = parseInt(cleaned.slice(0, 4));
-            const month = parseInt(cleaned.slice(4, 6)) - 1;
-            const day = parseInt(cleaned.slice(6, 8));
-            
-            return new Date(year, month, day);
-          };
+  // 날짜 문자열을 Date 객체로 변환
+  const parseDate = (dateStr) => {
+    if (!dateStr) return null;
+    const cleaned = dateStr.replace(/[^0-9]/g, '');
+    if (cleaned.length !== 8) return null;
+    
+    const year = parseInt(cleaned.slice(0, 4));
+    const month = parseInt(cleaned.slice(4, 6)) - 1; // 0-indexed
+    const day = parseInt(cleaned.slice(6, 8));
+    
+    // 연도 처리 (2자리 입력 대응)
+    let fullYear = year;
+    if (year < 100) {
+      fullYear = year < 30 ? 2000 + year : 1900 + year;
+    }
+    
+    return new Date(fullYear, month, day);
+  };
 
-          // 근속연수 계산
-          const calculateServiceYears = (hireDate, retirementDate) => {
-            const hire = parseDate(hireDate);
-            const retire = parseDate(retirementDate);
-            
-            if (!hire || !retire) return null;
-            
-            let years = retire.getFullYear() - hire.getFullYear();
-            let months = retire.getMonth() - hire.getMonth();
-            let days = retire.getDate() - hire.getDate();
-            
-            if (days < 0) {
-              months--;
-              const lastDayOfPrevMonth = new Date(retire.getFullYear(), retire.getMonth(), 0).getDate();
-              days = lastDayOfPrevMonth - hire.getDate() + retire.getDate();
-            }
-            
-            if (months < 0) {
-              years--;
-              months += 12;
-            }
-            
-            const totalMonths = years * 12 + months + (days >= 15 ? 1 : 0);
-            
-            return {
-              years,
-              months,
-              days,
-              totalMonths,
-              display: `${years}년 ${months}월 ${days}일`
-            };
-          };
+  // 근속연수 계산
+  const calculateServiceYears = (hireDate, retirementDate) => {
+    const hire = parseDate(hireDate);
+    const retire = parseDate(retirementDate);
+    
+    if (!hire || !retire) return null;
+    
+    // 년, 월, 일 단위로 정확히 계산
+    let years = retire.getFullYear() - hire.getFullYear();
+    let months = retire.getMonth() - hire.getMonth();
+    let days = retire.getDate() - hire.getDate();
+    
+    // 일수가 음수인 경우 조정
+    if (days < 0) {
+      months--;
+      // 이전 달의 마지막 날을 구함
+      const lastDayOfPrevMonth = new Date(retire.getFullYear(), retire.getMonth(), 0).getDate();
+      days = lastDayOfPrevMonth - hire.getDate() + retire.getDate();
+    }
+    
+    // 월수가 음수인 경우 조정
+    if (months < 0) {
+      years--;
+      months += 12;
+    }
+    
+    // 총 개월수 계산 (15일 이상은 1개월로 처리)
+    const totalMonths = years * 12 + months + (days >= 15 ? 1 : 0);
+    
+    return {
+      years,
+      months,
+      days,
+      totalMonths,
+      display: `${years}년 ${months}월 ${days}일`
+    };
+  };
 
-          // 정년퇴직일 계산
-          const calculateRetirementAge = (birthDate, employeeType) => {
-            const birth = parseDate(birthDate);
-            if (!birth) return null;
-            
-            const birthMonth = birth.getMonth() + 1;
-            const retirementAge = employeeType === 'professor' ? 65 : 61;
-            const retirementYear = birth.getFullYear() + retirementAge;
-            
-            if (birthMonth >= 3 && birthMonth <= 8) {
-              return new Date(retirementYear, 7, 31);
-            } else if (birthMonth >= 9) {
-              const feb = new Date(retirementYear + 1, 2, 0);
-              return feb;
-            } else {
-              const feb = new Date(retirementYear, 2, 0);
-              return feb;
-            }
-          };
+  // 정년퇴직일 계산
+  const calculateRetirementAge = (birthDate, employeeType) => {
+    const birth = parseDate(birthDate);
+    if (!birth) return null;
+    
+    const birthMonth = birth.getMonth() + 1; // 1-indexed for comparison
+    
+    if (employeeType === 'professor') {
+      // 교원: 만 65세가 되는 날이 속하는 학기의 최종일
+      const retirementYear = birth.getFullYear() + 65;
+      
+      // 3월~8월생: 해당년도 8월 31일
+      // 9월~12월생: 다음년도 2월 말일
+      // 1월~2월생: 해당년도 2월 말일
+      if (birthMonth >= 3 && birthMonth <= 8) {
+        return new Date(retirementYear, 7, 31); // 8월 31일
+      } else if (birthMonth >= 9) {
+        // 9~12월생: 다음해 2월 말일
+        const feb = new Date(retirementYear + 1, 2, 0); // 3월 0일 = 2월 마지막날
+        return feb;
+      } else {
+        // 1~2월생: 해당년도 2월 말일
+        const feb = new Date(retirementYear, 2, 0);
+        return feb;
+      }
+    } else {
+      // 직원: 만 61세
+      const retirementYear = birth.getFullYear() + 61;
+      
+      // 학기 말일로 조정 (교원과 동일한 로직)
+      if (birthMonth >= 3 && birthMonth <= 8) {
+        return new Date(retirementYear, 7, 31); // 8월 31일
+      } else if (birthMonth >= 9) {
+        // 9~12월생: 다음해 2월 말일
+        const feb = new Date(retirementYear + 1, 2, 0);
+        return feb;
+      } else {
+        // 1~2월생: 해당년도 2월 말일
+        const feb = new Date(retirementYear, 2, 0);
+        return feb;
+      }
+    }
+  };
 
-          // 정년 잔여개월수 계산
-          const calculateRemainingMonths = (retirementDate, regularRetirementDate) => {
-            const retire = parseDate(retirementDate);
-            const regular = regularRetirementDate;
-            
-            if (!retire || !regular) return null;
-            
-            if (regular < retire) {
-              return {
-                totalMonths: 0,
-                years: 0,
-                months: 0,
-                days: 0,
-                display: '정년 초과'
-              };
-            }
-            
-            let years = regular.getFullYear() - retire.getFullYear();
-            let months = regular.getMonth() - retire.getMonth();
-            let days = regular.getDate() - retire.getDate();
-            
-            if (days < 0) {
-              months--;
-              const lastDayOfPrevMonth = new Date(regular.getFullYear(), regular.getMonth(), 0).getDate();
-              days = lastDayOfPrevMonth - retire.getDate() + regular.getDate();
-            }
-            
-            if (months < 0) {
-              years--;
-              months += 12;
-            }
-            
-            const totalMonths = years * 12 + months + (days >= 15 ? 1 : 0);
-            
-            return {
-              totalMonths,
-              years,
-              months,
-              days,
-              display: `${years}년 ${months}월 ${days}일`
-            };
-          };
+  // 정년 잔여개월수 계산
+  const calculateRemainingMonths = (retirementDate, regularRetirementDate) => {
+    const retire = parseDate(retirementDate);
+    const regular = regularRetirementDate;
+    
+    if (!retire || !regular) return null;
+    
+    // 정년 초과 체크
+    if (regular < retire) {
+      return {
+        totalMonths: 0,
+        years: 0,
+        months: 0,
+        days: 0,
+        display: '정년 초과'
+      };
+    }
+    
+    // 년, 월, 일 단위로 정확히 계산
+    let years = regular.getFullYear() - retire.getFullYear();
+    let months = regular.getMonth() - retire.getMonth();
+    let days = regular.getDate() - retire.getDate();
+    
+    // 일수가 음수인 경우 조정
+    if (days < 0) {
+      months--;
+      // 이전 달의 마지막 날을 구함
+      const lastDayOfPrevMonth = new Date(regular.getFullYear(), regular.getMonth(), 0).getDate();
+      days = lastDayOfPrevMonth - retire.getDate() + regular.getDate();
+    }
+    
+    // 월수가 음수인 경우 조정
+    if (months < 0) {
+      years--;
+      months += 12;
+    }
+    
+    // 총 개월수 계산 (15일 이상은 1개월로 처리)
+    const totalMonths = years * 12 + months + (days >= 15 ? 1 : 0);
+    
+    return {
+      totalMonths,
+      years,
+      months,
+      days,
+      display: `${years}년 ${months}월 ${days}일`
+    };
+  };
 
-          // 명예퇴직수당 계산
-          const calculateBenefit = () => {
-            setErrors({});
-            const newErrors = {};
+  // 명예퇴직수당 계산
+  const calculateBenefit = () => {
+    setErrors({});
+    const newErrors = {};
 
-            if (!formData.name) newErrors.name = '성명을 입력하세요';
-            if (!formData.employeeId) newErrors.employeeId = '교번을 입력하세요';
-            if (!formData.hireDate || formData.hireDate.length < 10) newErrors.hireDate = '최초임용일을 8자리로 입력하세요';
-            if (!formData.retirementDate || formData.retirementDate.length < 10) newErrors.retirementDate = '명예퇴직일을 8자리로 입력하세요';
-            if (!formData.birthDate || formData.birthDate.length < 10) newErrors.birthDate = '생년월일을 8자리로 입력하세요';
-            if (!formData.monthlyPay1 || !formData.monthlyPay2 || !formData.monthlyPay3) {
-              newErrors.monthlyPay = '최근 3개월 보수를 모두 입력하세요';
-            }
+    // 유효성 검사
+    if (!formData.name) newErrors.name = '성명을 입력하세요';
+    if (!formData.employeeId) newErrors.employeeId = '교번을 입력하세요';
+    if (!formData.hireDate || formData.hireDate.length < 10) newErrors.hireDate = '최초임용일을 8자리로 입력하세요 (예: 1996.03.01)';
+    if (!formData.retirementDate || formData.retirementDate.length < 10) newErrors.retirementDate = '명예퇴직일을 8자리로 입력하세요';
+    if (!formData.birthDate || formData.birthDate.length < 10) newErrors.birthDate = '생년월일을 8자리로 입력하세요';
+    if (!formData.monthlyPay1 || !formData.monthlyPay2 || !formData.monthlyPay3) {
+      newErrors.monthlyPay = '최근 3개월 보수를 모두 입력하세요';
+    }
 
-            if (Object.keys(newErrors).length > 0) {
-              setErrors(newErrors);
-              return;
-            }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
 
-            const service = calculateServiceYears(formData.hireDate, formData.retirementDate);
-            
-            if (!service) {
-              setErrors({date: '날짜 형식이 올바르지 않습니다'});
-              return;
-            }
-            
-            const isEligible = service.years >= 20;
-            const disqualified = Object.values(formData.disqualifications).some(v => v);
-            const regularRetirementDate = calculateRetirementAge(formData.birthDate, formData.employeeType);
-            
-            if (!regularRetirementDate) {
-              setErrors({birthDate: '생년월일 형식이 올바르지 않습니다'});
-              return;
-            }
-            
-            const remaining = calculateRemainingMonths(formData.retirementDate, regularRetirementDate);
-            
-            const avgMonthlyPay = (
-              parseFloat(formData.monthlyPay1) + 
-              parseFloat(formData.monthlyPay2) + 
-              parseFloat(formData.monthlyPay3)
-            ) / 3;
-            
-            let benefit = 0;
-            let benefitDetails = [];
-            
-            if (isEligible && !disqualified && remaining.totalMonths > 0) {
-              if (remaining.totalMonths <= 60) {
-                benefit = remaining.totalMonths * avgMonthlyPay * 0.6;
-                benefitDetails.push({
-                  period: '1~5년',
-                  months: remaining.totalMonths,
-                  rate: 0.6,
-                  amount: benefit
-                });
-              } else if (remaining.totalMonths <= 120) {
-                const first5Years = 60 * avgMonthlyPay * 0.6;
-                const remainingMonths = remaining.totalMonths - 60;
-                const next5Years = remainingMonths * avgMonthlyPay * 0.3;
+    // 근속연수 확인
+    const service = calculateServiceYears(formData.hireDate, formData.retirementDate);
+    
+    if (!service) {
+      setErrors({date: '날짜 형식이 올바르지 않습니다'});
+      return;
+    }
+    
+    // 적용대상 확인 (20년 이상 근속)
+    const isEligible = service.years >= 20;
+    
+    // 지급대상 제한 확인
+    const disqualified = Object.values(formData.disqualifications).some(v => v);
+    
+    // 정년퇴직일 계산
+    const regularRetirementDate = calculateRetirementAge(formData.birthDate, formData.employeeType);
+    
+    if (!regularRetirementDate) {
+      setErrors({birthDate: '생년월일 형식이 올바르지 않습니다'});
+      return;
+    }
+    
+    // 정년 잔여개월수 계산
+    const remaining = calculateRemainingMonths(formData.retirementDate, regularRetirementDate);
+    
+    // 평균보수월액 계산
+    const avgMonthlyPay = (
+      parseFloat(formData.monthlyPay1) + 
+      parseFloat(formData.monthlyPay2) + 
+      parseFloat(formData.monthlyPay3)
+    ) / 3;
+    
+    // 명예퇴직수당 계산
+    let benefit = 0;
+    let benefitDetails = [];
+    let actualMonths = remaining.totalMonths; // 실제 잔여 개월수
+    let calculatedMonths = Math.min(remaining.totalMonths, 120); // 최대 120개월까지만 계산
+    
+    if (isEligible && !disqualified && remaining.totalMonths > 0) {
+      if (calculatedMonths <= 60) {
+        // 1~5년: 60% 지급
+        benefit = calculatedMonths * avgMonthlyPay * 0.6;
+        benefitDetails.push({
+          period: '1~5년',
+          months: calculatedMonths,
+          rate: 0.6,
+          amount: benefit
+        });
+      } else {
+        // 1~5년: 60개월 × 60%
+        const first5Years = 60 * avgMonthlyPay * 0.6;
+        // 5~10년: 나머지 × 30% (최대 60개월)
+        const remainingMonths = calculatedMonths - 60;
+        const next5Years = remainingMonths * avgMonthlyPay * 0.3;
+        
+        benefit = first5Years + next5Years;
+        benefitDetails.push({
+          period: '1~5년',
+          months: 60,
+          rate: 0.6,
+          amount: first5Years
+        });
+        benefitDetails.push({
+          period: '5~10년',
+          months: remainingMonths,
+          rate: 0.3,
+          amount: next5Years
+        });
+      }
+      
+      // 10년 초과분이 있는 경우 안내
+      if (actualMonths > 120) {
+        benefitDetails.push({
+          period: '10년 초과',
+          months: actualMonths - 120,
+          rate: 0,
+          amount: 0,
+          note: '규정상 10년까지만 지급'
+        });
+      }
+    }
+    
+    setCalculation({
+      isEligible,
+      disqualified,
+      service,
+      regularRetirementDate,
+      remaining,
+      avgMonthlyPay,
+      benefit,
+      benefitDetails,
+      actualMonths  // 실제 잔여 개월수
+    });
+  };
+
+  // 직원 추가
+  const addEmployee = () => {
+    if (!calculation) {
+      alert('먼저 계산을 수행하세요');
+      return;
+    }
+    
+    const newEmployee = {
+      id: Date.now(),
+      ...formData,
+      ...calculation,
+      registeredAt: new Date().toLocaleString()
+    };
+    
+    setEmployees([...employees, newEmployee]);
+    
+    // 폼 초기화
+    setFormData({
+      name: '',
+      employeeId: '',
+      department: '',
+      position: '',
+      hireDate: '',
+      retirementDate: '',
+      birthDate: '',
+      employeeType: 'professor',
+      monthlyPay1: '',
+      monthlyPay2: '',
+      monthlyPay3: '',
+      disqualifications: {
+        underDisciplinary: false,
+        disciplinaryPunishment: false,
+        criminalCase: false,
+        inappropriate: false
+      }
+    });
+    setCalculation(null);
+  };
+
+  // CSV 다운로드
+  const downloadCSV = () => {
+    const headers = ['순번', '소속', '직렬', '성명', '교번', '최초임용일', '퇴직일', '근속기간', '정년퇴직일', '정년잔여개월수', '평균보수월액', '명예퇴직수당', '등록일시'];
+    
+    const rows = employees.map((emp, idx) => [
+      idx + 1,
+      emp.department,
+      emp.position,
+      emp.name,
+      emp.employeeId,
+      emp.hireDate,
+      emp.retirementDate,
+      emp.service.display,
+      emp.regularRetirementDate.toLocaleDateString(),
+      emp.remaining.totalMonths,
+      emp.avgMonthlyPay.toLocaleString(),
+      emp.benefit.toLocaleString(),
+      emp.registeredAt
+    ]);
+    
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+    
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `명예퇴직수당_관리대장_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">교직원 명예퇴직수당 관리 시스템</h1>
+        <p className="text-gray-600">용인대학교 교직원 명예퇴직수당 지급 규정에 따른 자동 계산 시스템</p>
+      </div>
+
+      {/* 날짜 입력 안내 */}
+      <div className="mb-4 bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
+        <div className="flex items-start">
+          <Info className="text-blue-600 mr-2 mt-0.5" size={20} />
+          <div className="text-sm text-blue-700">
+            <p className="font-semibold mb-1">날짜 입력 방법</p>
+            <p>날짜는 숫자 8자리로 입력하세요. (예: 19960301 → 1996.03.01로 자동 변환)</p>
+            <p>• 4자리 연도 사용 (1996, 2025 등)</p>
+            <p>• 교원 정년: 만 65세가 되는 날이 속하는 학기 말일</p>
+            <p>• 직원 정년: 만 61세가 되는 날이 속하는 학기 말일</p>
+            <p>• 명예퇴직수당: 최대 10년치까지 지급 (1~5년 60%, 5~10년 30%)</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* 입력 폼 */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold mb-4 flex items-center">
+            <UserPlus className="mr-2" size={20} />
+            교직원 정보 입력
+          </h2>
+          
+          <div className="space-y-4">
+            {/* 기본 정보 */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">성명*</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  className={`w-full px-3 py-2 border rounded-md ${errors.name ? 'border-red-500' : 'border-gray-300'}`}
+                  placeholder="홍길동"
+                />
+                {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">교번*</label>
+                <input
+                  type="text"
+                  value={formData.employeeId}
+                  onChange={(e) => setFormData({...formData, employeeId: e.target.value})}
+                  className={`w-full px-3 py-2 border rounded-md ${errors.employeeId ? 'border-red-500' : 'border-gray-300'}`}
+                  placeholder="123456"
+                />
+                {errors.employeeId && <p className="text-red-500 text-xs mt-1">{errors.employeeId}</p>}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">소속</label>
+                <input
+                  type="text"
+                  value={formData.department}
+                  onChange={(e) => setFormData({...formData, department: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="경영학과"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">직렬</label>
+                <input
+                  type="text"
+                  value={formData.position}
+                  onChange={(e) => setFormData({...formData, position: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="교수"
+                />
+              </div>
+            </div>
+
+            {/* 날짜 정보 */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">최초임용일* (8자리)</label>
+                <input
+                  type="text"
+                  value={formData.hireDate}
+                  onChange={(e) => formatDateInput(e.target.value, 'hireDate')}
+                  className={`w-full px-3 py-2 border rounded-md ${errors.hireDate ? 'border-red-500' : 'border-gray-300'}`}
+                  placeholder="1996.03.01"
+                  maxLength="10"
+                />
+                {errors.hireDate && <p className="text-red-500 text-xs mt-1">{errors.hireDate}</p>}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">명예퇴직일* (8자리)</label>
+                <input
+                  type="text"
+                  value={formData.retirementDate}
+                  onChange={(e) => formatDateInput(e.target.value, 'retirementDate')}
+                  className={`w-full px-3 py-2 border rounded-md ${errors.retirementDate ? 'border-red-500' : 'border-gray-300'}`}
+                  placeholder="2025.08.31"
+                  maxLength="10"
+                />
+                {errors.retirementDate && <p className="text-red-500 text-xs mt-1">{errors.retirementDate}</p>}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">생년월일* (8자리)</label>
+                <input
+                  type="text"
+                  value={formData.birthDate}
+                  onChange={(e) => formatDateInput(e.target.value, 'birthDate')}
+                  className={`w-full px-3 py-2 border rounded-md ${errors.birthDate ? 'border-red-500' : 'border-gray-300'}`}
+                  placeholder="1966.05.15"
+                  maxLength="10"
+                />
+                {errors.birthDate && <p className="text-red-500 text-xs mt-1">{errors.birthDate}</p>}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">교직원 구분</label>
+                <select
+                  value={formData.employeeType}
+                  onChange={(e) => setFormData({...formData, employeeType: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                >
+                  <option value="professor">교원 (정년 만65세)</option>
+                  <option value="staff">직원 (정년 만61세)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* 보수 정보 */}
+            <div>
+              <label className="block text-sm font-medium mb-2">최근 3개월 평균보수월액*</label>
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  type="number"
+                  placeholder="1개월 전"
+                  value={formData.monthlyPay1}
+                  onChange={(e) => setFormData({...formData, monthlyPay1: e.target.value})}
+                  className={`px-3 py-2 border rounded-md ${errors.monthlyPay ? 'border-red-500' : 'border-gray-300'}`}
+                />
+                <input
+                  type="number"
+                  placeholder="2개월 전"
+                  value={formData.monthlyPay2}
+                  onChange={(e) => setFormData({...formData, monthlyPay2: e.target.value})}
+                  className={`px-3 py-2 border rounded-md ${errors.monthlyPay ? 'border-red-500' : 'border-gray-300'}`}
+                />
+                <input
+                  type="number"
+                  placeholder="3개월 전"
+                  value={formData.monthlyPay3}
+                  onChange={(e) => setFormData({...formData, monthlyPay3: e.target.value})}
+                  className={`px-3 py-2 border rounded-md ${errors.monthlyPay ? 'border-red-500' : 'border-gray-300'}`}
+                />
+              </div>
+              {errors.monthlyPay && <p className="text-red-500 text-xs mt-1">{errors.monthlyPay}</p>}
+            </div>
+
+            {/* 지급대상 제한 체크 */}
+            <div className="border-t pt-4">
+              <label className="block text-sm font-medium mb-2">지급대상 제한사항 확인</label>
+              <div className="space-y-2">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.disqualifications.underDisciplinary}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      disqualifications: {
+                        ...formData.disqualifications,
+                        underDisciplinary: e.target.checked
+                      }
+                    })}
+                    className="mr-2"
+                  />
+                  <span className="text-sm">징계 요구중인 자</span>
+                </label>
                 
-                benefit = first5Years + next5Years;
-                benefitDetails.push({
-                  period: '1~5년',
-                  months: 60,
-                  rate: 0.6,
-                  amount: first5Years
-                });
-                benefitDetails.push({
-                  period: '5~10년',
-                  months: remainingMonths,
-                  rate: 0.3,
-                  amount: next5Years
-                });
-              }
-            }
-            
-            setCalculation({
-              isEligible,
-              disqualified,
-              service,
-              regularRetirementDate,
-              remaining,
-              avgMonthlyPay,
-              benefit,
-              benefitDetails
-            });
-          };
-
-          // 직원 추가
-          const addEmployee = () => {
-            if (!calculation) {
-              alert('먼저 계산을 수행하세요');
-              return;
-            }
-            
-            const newEmployee = {
-              id: Date.now(),
-              ...formData,
-              ...calculation,
-              registeredAt: new Date().toLocaleString()
-            };
-            
-            setEmployees([...employees, newEmployee]);
-            
-            setFormData({
-              name: '',
-              employeeId: '',
-              department: '',
-              position: '',
-              hireDate: '',
-              retirementDate: '',
-              birthDate: '',
-              employeeType: 'professor',
-              monthlyPay1: '',
-              monthlyPay2: '',
-              monthlyPay3: '',
-              disqualifications: {
-                underDisciplinary: false,
-                disciplinaryPunishment: false,
-                criminalCase: false,
-                inappropriate: false
-              }
-            });
-            setCalculation(null);
-          };
-
-          // CSV 다운로드
-          const downloadCSV = () => {
-            const headers = ['순번', '소속', '직렬', '성명', '교번', '최초임용일', '퇴직일', '근속기간', '정년퇴직일', '정년잔여개월수', '평균보수월액', '명예퇴직수당', '등록일시'];
-            
-            const rows = employees.map((emp, idx) => [
-              idx + 1,
-              emp.department,
-              emp.position,
-              emp.name,
-              emp.employeeId,
-              emp.hireDate,
-              emp.retirementDate,
-              emp.service.display,
-              emp.regularRetirementDate.toLocaleDateString(),
-              emp.remaining.totalMonths,
-              emp.avgMonthlyPay.toLocaleString(),
-              emp.benefit.toLocaleString(),
-              emp.registeredAt
-            ]);
-            
-            const csvContent = [headers, ...rows]
-              .map(row => row.map(cell => `"${cell}"`).join(','))
-              .join('\n');
-            
-            const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `명예퇴직수당_관리대장_${new Date().toISOString().split('T')[0]}.csv`;
-            link.click();
-          };
-
-          return (
-            <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
-              <div className="mb-8">
-                <h1 className="text-3xl font-bold text-gray-800 mb-2">교직원 명예퇴직수당 관리 시스템</h1>
-                <p className="text-gray-600">용인대학교 교직원 명예퇴직수당 지급 규정에 따른 자동 계산 시스템</p>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.disqualifications.disciplinaryPunishment}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      disqualifications: {
+                        ...formData.disqualifications,
+                        disciplinaryPunishment: e.target.checked
+                      }
+                    })}
+                    className="mr-2"
+                  />
+                  <span className="text-sm">징계처분으로 인하여 징계중인 자</span>
+                </label>
+                
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.disqualifications.criminalCase}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      disqualifications: {
+                        ...formData.disqualifications,
+                        criminalCase: e.target.checked
+                      }
+                    })}
+                    className="mr-2"
+                  />
+                  <span className="text-sm">형사사건으로 기소되어 형이 확정되지 아니한 자</span>
+                </label>
+                
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.disqualifications.inappropriate}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      disqualifications: {
+                        ...formData.disqualifications,
+                        inappropriate: e.target.checked
+                      }
+                    })}
+                    className="mr-2"
+                  />
+                  <span className="text-sm">기타 명예퇴직이 부적합하다고 인정되는 자</span>
+                </label>
               </div>
+            </div>
 
-              <div className="mb-4 bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
-                <div className="flex items-start">
-                  <Info />
-                  <div className="ml-2 text-sm text-blue-700">
-                    <p className="font-semibold mb-1">날짜 입력 방법</p>
-                    <p>날짜는 숫자 8자리로 입력하세요. (예: 19960301 → 1996.03.01로 자동 변환)</p>
-                    <p>• 교원 정년: 만 65세가 되는 날이 속하는 학기 말일</p>
-                    <p>• 직원 정년: 만 61세가 되는 날이 속하는 학기 말일</p>
+            <button
+              onClick={calculateBenefit}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 flex items-center justify-center"
+            >
+              <Calculator className="mr-2" size={20} />
+              명예퇴직수당 계산
+            </button>
+          </div>
+        </div>
+
+        {/* 계산 결과 */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold mb-4 flex items-center">
+            <FileText className="mr-2" size={20} />
+            계산 결과
+          </h2>
+          
+          {calculation ? (
+            <div className="space-y-4">
+              {/* 적용대상 여부 */}
+              <div className="border rounded-lg p-4">
+                <h3 className="font-semibold mb-2">적용대상 여부</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    {calculation.isEligible ? (
+                      <CheckCircle className="text-green-500 mr-2" size={20} />
+                    ) : (
+                      <XCircle className="text-red-500 mr-2" size={20} />
+                    )}
+                    <span>
+                      근속기간: {calculation.service.display} 
+                      {calculation.isEligible ? ' (20년 이상 ✓)' : ' (20년 미만 ✗)'}
+                    </span>
                   </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white rounded-lg shadow-md p-6">
-                  <h2 className="text-xl font-semibold mb-4 flex items-center">
-                    <UserPlus />
-                    <span className="ml-2">교직원 정보 입력</span>
-                  </h2>
                   
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">성명*</label>
-                        <input
-                          type="text"
-                          value={formData.name}
-                          onChange={(e) => setFormData({...formData, name: e.target.value})}
-                          className={`w-full px-3 py-2 border rounded-md ${errors.name ? 'border-red-500' : 'border-gray-300'}`}
-                          placeholder="홍길동"
-                        />
-                        {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium mb-1">교번*</label>
-                        <input
-                          type="text"
-                          value={formData.employeeId}
-                          onChange={(e) => setFormData({...formData, employeeId: e.target.value})}
-                          className={`w-full px-3 py-2 border rounded-md ${errors.employeeId ? 'border-red-500' : 'border-gray-300'}`}
-                          placeholder="123456"
-                        />
-                        {errors.employeeId && <p className="text-red-500 text-xs mt-1">{errors.employeeId}</p>}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">소속</label>
-                        <input
-                          type="text"
-                          value={formData.department}
-                          onChange={(e) => setFormData({...formData, department: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                          placeholder="경영학과"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium mb-1">직렬</label>
-                        <input
-                          type="text"
-                          value={formData.position}
-                          onChange={(e) => setFormData({...formData, position: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                          placeholder="교수"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">최초임용일* (8자리)</label>
-                        <input
-                          type="text"
-                          value={formData.hireDate}
-                          onChange={(e) => formatDateInput(e.target.value, 'hireDate')}
-                          className={`w-full px-3 py-2 border rounded-md ${errors.hireDate ? 'border-red-500' : 'border-gray-300'}`}
-                          placeholder="1996.03.01"
-                          maxLength="10"
-                        />
-                        {errors.hireDate && <p className="text-red-500 text-xs mt-1">{errors.hireDate}</p>}
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium mb-1">명예퇴직일* (8자리)</label>
-                        <input
-                          type="text"
-                          value={formData.retirementDate}
-                          onChange={(e) => formatDateInput(e.target.value, 'retirementDate')}
-                          className={`w-full px-3 py-2 border rounded-md ${errors.retirementDate ? 'border-red-500' : 'border-gray-300'}`}
-                          placeholder="2025.08.31"
-                          maxLength="10"
-                        />
-                        {errors.retirementDate && <p className="text-red-500 text-xs mt-1">{errors.retirementDate}</p>}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">생년월일* (8자리)</label>
-                        <input
-                          type="text"
-                          value={formData.birthDate}
-                          onChange={(e) => formatDateInput(e.target.value, 'birthDate')}
-                          className={`w-full px-3 py-2 border rounded-md ${errors.birthDate ? 'border-red-500' : 'border-gray-300'}`}
-                          placeholder="1966.05.15"
-                          maxLength="10"
-                        />
-                        {errors.birthDate && <p className="text-red-500 text-xs mt-1">{errors.birthDate}</p>}
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium mb-1">교직원 구분</label>
-                        <select
-                          value={formData.employeeType}
-                          onChange={(e) => setFormData({...formData, employeeType: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                        >
-                          <option value="professor">교원 (정년 만65세)</option>
-                          <option value="staff">직원 (정년 만61세)</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-2">최근 3개월 평균보수월액*</label>
-                      <div className="grid grid-cols-3 gap-2">
-                        <input
-                          type="number"
-                          placeholder="1개월 전"
-                          value={formData.monthlyPay1}
-                          onChange={(e) => setFormData({...formData, monthlyPay1: e.target.value})}
-                          className={`px-3 py-2 border rounded-md ${errors.monthlyPay ? 'border-red-500' : 'border-gray-300'}`}
-                        />
-                        <input
-                          type="number"
-                          placeholder="2개월 전"
-                          value={formData.monthlyPay2}
-                          onChange={(e) => setFormData({...formData, monthlyPay2: e.target.value})}
-                          className={`px-3 py-2 border rounded-md ${errors.monthlyPay ? 'border-red-500' : 'border-gray-300'}`}
-                        />
-                        <input
-                          type="number"
-                          placeholder="3개월 전"
-                          value={formData.monthlyPay3}
-                          onChange={(e) => setFormData({...formData, monthlyPay3: e.target.value})}
-                          className={`px-3 py-2 border rounded-md ${errors.monthlyPay ? 'border-red-500' : 'border-gray-300'}`}
-                        />
-                      </div>
-                      {errors.monthlyPay && <p className="text-red-500 text-xs mt-1">{errors.monthlyPay}</p>}
-                    </div>
-
-                    <div className="border-t pt-4">
-                      <label className="block text-sm font-medium mb-2">지급대상 제한사항 확인</label>
-                      <div className="space-y-2">
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formData.disqualifications.underDisciplinary}
-                            onChange={(e) => setFormData({
-                              ...formData,
-                              disqualifications: {
-                                ...formData.disqualifications,
-                                underDisciplinary: e.target.checked
-                              }
-                            })}
-                            className="mr-2"
-                          />
-                          <span className="text-sm">징계 요구중인 자</span>
-                        </label>
-                        
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formData.disqualifications.disciplinaryPunishment}
-                            onChange={(e) => setFormData({
-                              ...formData,
-                              disqualifications: {
-                                ...formData.disqualifications,
-                                disciplinaryPunishment: e.target.checked
-                              }
-                            })}
-                            className="mr-2"
-                          />
-                          <span className="text-sm">징계처분으로 인하여 징계중인 자</span>
-                        </label>
-                        
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formData.disqualifications.criminalCase}
-                            onChange={(e) => setFormData({
-                              ...formData,
-                              disqualifications: {
-                                ...formData.disqualifications,
-                                criminalCase: e.target.checked
-                              }
-                            })}
-                            className="mr-2"
-                          />
-                          <span className="text-sm">형사사건으로 기소되어 형이 확정되지 아니한 자</span>
-                        </label>
-                        
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={formData.disqualifications.inappropriate}
-                            onChange={(e) => setFormData({
-                              ...formData,
-                              disqualifications: {
-                                ...formData.disqualifications,
-                                inappropriate: e.target.checked
-                              }
-                            })}
-                            className="mr-2"
-                          />
-                          <span className="text-sm">기타 명예퇴직이 부적합하다고 인정되는 자</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={calculateBenefit}
-                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 flex items-center justify-center"
-                    >
-                      <Calculator />
-                      <span className="ml-2">명예퇴직수당 계산</span>
-                    </button>
+                  <div className="flex items-center">
+                    {!calculation.disqualified ? (
+                      <CheckCircle className="text-green-500 mr-2" size={20} />
+                    ) : (
+                      <XCircle className="text-red-500 mr-2" size={20} />
+                    )}
+                    <span>
+                      지급제한사항: {calculation.disqualified ? '해당됨 ✗' : '해당없음 ✓'}
+                    </span>
                   </div>
-                </div>
-
-                <div className="bg-white rounded-lg shadow-md p-6">
-                  <h2 className="text-xl font-semibold mb-4 flex items-center">
-                    <FileText />
-                    <span className="ml-2">계산 결과</span>
-                  </h2>
                   
-                  {calculation ? (
-                    <div className="space-y-4">
-                      <div className="border rounded-lg p-4">
-                        <h3 className="font-semibold mb-2">적용대상 여부</h3>
-                        <div className="space-y-2">
-                          <div className="flex items-center">
-                            {calculation.isEligible ? <CheckCircle /> : <XCircle />}
-                            <span className="ml-2">
-                              근속기간: {calculation.service.display} 
-                              {calculation.isEligible ? ' (20년 이상 ✓)' : ' (20년 미만 ✗)'}
-                            </span>
-                          </div>
-                          
-                          <div className="flex items-center">
-                            {!calculation.disqualified ? <CheckCircle /> : <XCircle />}
-                            <span className="ml-2">
-                              지급제한사항: {calculation.disqualified ? '해당됨 ✗' : '해당없음 ✓'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {calculation.isEligible && !calculation.disqualified && (
-                        <>
-                          <div className="border rounded-lg p-4">
-                            <h3 className="font-semibold mb-2">퇴직일 정보</h3>
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                              <div>명예퇴직일:</div>
-                              <div>{formData.retirementDate}</div>
-                              <div>정년퇴직일:</div>
-                              <div>{calculation.regularRetirementDate.toLocaleDateString('ko-KR')}</div>
-                              <div>정년잔여기간:</div>
-                              <div>{calculation.remaining.display}</div>
-                              <div>정년잔여개월수:</div>
-                              <div className="font-semibold">{calculation.remaining.totalMonths}개월</div>
-                            </div>
-                          </div>
-
-                          <div className="border rounded-lg p-4">
-                            <h3 className="font-semibold mb-2">보수 정보</h3>
-                            <div className="text-sm">
-                              <div>평균보수월액: {calculation.avgMonthlyPay.toLocaleString()}원</div>
-                            </div>
-                          </div>
-
-                          <div className="border rounded-lg p-4">
-                            <h3 className="font-semibold mb-2">명예퇴직수당 산출내역</h3>
-                            <div className="space-y-2">
-                              {calculation.benefitDetails.map((detail, idx) => (
-                                <div key={idx} className="text-sm">
-                                  <div className="font-medium">{detail.period} 구간</div>
-                                  <div className="ml-4 text-gray-600">
-                                    {detail.months}개월 × {calculation.avgMonthlyPay.toLocaleString()}원 × {detail.rate * 100}%
-                                    = {detail.amount.toLocaleString()}원
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-                            <h3 className="font-semibold text-lg mb-1">최종 명예퇴직수당</h3>
-                            <div className="text-2xl font-bold text-blue-600">
-                              {calculation.benefit.toLocaleString()}원
-                            </div>
-                          </div>
-
-                          <button
-                            onClick={addEmployee}
-                            className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700"
-                          >
-                            직원 명단에 추가
-                          </button>
-                        </>
-                      )}
-
-                      {(!calculation.isEligible || calculation.disqualified) && (
-                        <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
-                          <div className="flex items-center text-red-700">
-                            <AlertCircle />
-                            <span className="ml-2 font-semibold">명예퇴직수당 지급 불가</span>
-                          </div>
-                          <div className="mt-2 text-sm text-red-600">
-                            {!calculation.isEligible && '근속기간이 20년 미만입니다.'}
-                            {calculation.disqualified && '지급제한사항에 해당됩니다.'}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-gray-500 text-center py-8">
-                      좌측 폼에 정보를 입력하고 계산 버튼을 클릭하세요
+                  {calculation.actualMonths > 120 && (
+                    <div className="flex items-center">
+                      <AlertCircle className="text-yellow-500 mr-2" size={20} />
+                      <span className="text-yellow-700">
+                        정년잔여기간 {Math.floor(calculation.actualMonths/12)}년 {calculation.actualMonths%12}개월 중 최대 10년분만 지급
+                      </span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {employees.length > 0 && (
-                <div className="mt-6 bg-white rounded-lg shadow-md p-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-semibold">명예퇴직 대상자 목록</h2>
-                    <button
-                      onClick={downloadCSV}
-                      className="bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 flex items-center"
-                    >
-                      <Download />
-                      <span className="ml-2">CSV 다운로드</span>
-                    </button>
+              {/* 세부 정보 */}
+              {calculation.isEligible && !calculation.disqualified && (
+                <>
+                  <div className="border rounded-lg p-4">
+                    <h3 className="font-semibold mb-2">퇴직일 정보</h3>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>명예퇴직일:</div>
+                      <div>{formData.retirementDate}</div>
+                      <div>정년퇴직일:</div>
+                      <div>{calculation.regularRetirementDate.toLocaleDateString('ko-KR')}</div>
+                      <div>정년잔여기간:</div>
+                      <div>{calculation.remaining.display}</div>
+                      <div>정년잔여개월수:</div>
+                      <div className="font-semibold">
+                        {calculation.remaining.totalMonths}개월
+                        {calculation.actualMonths > 120 && (
+                          <span className="text-orange-600 text-xs ml-1">
+                            (최대 120개월까지만 계산)
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="border px-2 py-2 text-left">순번</th>
-                          <th className="border px-2 py-2 text-left">성명</th>
-                          <th className="border px-2 py-2 text-left">교번</th>
-                          <th className="border px-2 py-2 text-left">소속</th>
-                          <th className="border px-2 py-2 text-left">구분</th>
-                          <th className="border px-2 py-2 text-left">근속기간</th>
-                          <th className="border px-2 py-2 text-left">정년잔여</th>
-                          <th className="border px-2 py-2 text-right">평균보수</th>
-                          <th className="border px-2 py-2 text-right">명예퇴직수당</th>
-                          <th className="border px-2 py-2 text-left">상태</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {employees.map((emp, idx) => (
-                          <tr key={emp.id} className="hover:bg-gray-50">
-                            <td className="border px-2 py-2">{idx + 1}</td>
-                            <td className="border px-2 py-2">{emp.name}</td>
-                            <td className="border px-2 py-2">{emp.employeeId}</td>
-                            <td className="border px-2 py-2">{emp.department}</td>
-                            <td className="border px-2 py-2">
-                              {emp.employeeType === 'professor' ? '교원' : '직원'}
-                            </td>
-                            <td className="border px-2 py-2">{emp.service.display}</td>
-                            <td className="border px-2 py-2">{emp.remaining.totalMonths}개월</td>
-                            <td className="border px-2 py-2 text-right">{emp.avgMonthlyPay.toLocaleString()}</td>
-                            <td className="border px-2 py-2 text-right font-semibold">
-                              {emp.benefit.toLocaleString()}
-                            </td>
-                            <td className="border px-2 py-2">
-                              {emp.isEligible && !emp.disqualified ? (
-                                <span className="text-green-600">지급가능</span>
-                              ) : (
-                                <span className="text-red-600">지급불가</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+
+                  <div className="border rounded-lg p-4">
+                    <h3 className="font-semibold mb-2">보수 정보</h3>
+                    <div className="text-sm">
+                      <div>평균보수월액: {calculation.avgMonthlyPay.toLocaleString()}원</div>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg p-4">
+                    <h3 className="font-semibold mb-2">명예퇴직수당 산출내역</h3>
+                    <div className="space-y-2">
+                      {calculation.benefitDetails.map((detail, idx) => (
+                        <div key={idx} className="text-sm">
+                          <div className="font-medium">{detail.period} 구간</div>
+                          {detail.note ? (
+                            <div className="ml-4 text-gray-500 italic">
+                              {detail.months}개월은 계산에서 제외 ({detail.note})
+                            </div>
+                          ) : (
+                            <div className="ml-4 text-gray-600">
+                              {detail.months}개월 × {calculation.avgMonthlyPay.toLocaleString()}원 × {detail.rate * 100}%
+                              = {detail.amount.toLocaleString()}원
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-lg mb-1">최종 명예퇴직수당</h3>
+                    <div className="text-2xl font-bold text-blue-600">
+                      {calculation.benefit.toLocaleString()}원
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={addEmployee}
+                    className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700"
+                  >
+                    직원 명단에 추가
+                  </button>
+                </>
+              )}
+
+              {/* 지급 불가 안내 */}
+              {(!calculation.isEligible || calculation.disqualified) && (
+                <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+                  <div className="flex items-center text-red-700">
+                    <AlertCircle className="mr-2" size={20} />
+                    <span className="font-semibold">명예퇴직수당 지급 불가</span>
+                  </div>
+                  <div className="mt-2 text-sm text-red-600">
+                    {!calculation.isEligible && '근속기간이 20년 미만입니다.'}
+                    {calculation.disqualified && '지급제한사항에 해당됩니다.'}
                   </div>
                 </div>
               )}
             </div>
-          );
-        };
+          ) : (
+            <div className="text-gray-500 text-center py-8">
+              좌측 폼에 정보를 입력하고 계산 버튼을 클릭하세요
+            </div>
+          )}
+        </div>
+      </div>
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<RetirementBenefitSystem />);
-    </script>
-</body>
-</html>
+      {/* 직원 목록 */}
+      {employees.length > 0 && (
+        <div className="mt-6 bg-white rounded-lg shadow-md p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">명예퇴직 대상자 목록</h2>
+            <button
+              onClick={downloadCSV}
+              className="bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 flex items-center"
+            >
+              <Download className="mr-2" size={16} />
+              CSV 다운로드
+            </button>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border px-2 py-2 text-left">순번</th>
+                  <th className="border px-2 py-2 text-left">성명</th>
+                  <th className="border px-2 py-2 text-left">교번</th>
+                  <th className="border px-2 py-2 text-left">소속</th>
+                  <th className="border px-2 py-2 text-left">구분</th>
+                  <th className="border px-2 py-2 text-left">근속기간</th>
+                  <th className="border px-2 py-2 text-left">정년잔여</th>
+                  <th className="border px-2 py-2 text-right">평균보수</th>
+                  <th className="border px-2 py-2 text-right">명예퇴직수당</th>
+                  <th className="border px-2 py-2 text-left">상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {employees.map((emp, idx) => (
+                  <tr key={emp.id} className="hover:bg-gray-50">
+                    <td className="border px-2 py-2">{idx + 1}</td>
+                    <td className="border px-2 py-2">{emp.name}</td>
+                    <td className="border px-2 py-2">{emp.employeeId}</td>
+                    <td className="border px-2 py-2">{emp.department}</td>
+                    <td className="border px-2 py-2">
+                      {emp.employeeType === 'professor' ? '교원' : '직원'}
+                    </td>
+                    <td className="border px-2 py-2">{emp.service.display}</td>
+                    <td className="border px-2 py-2">
+                      {emp.remaining.totalMonths}개월
+                      {emp.actualMonths > 120 && (
+                        <span className="text-xs text-orange-600"> (최대 120)</span>
+                      )}
+                    </td>
+                    <td className="border px-2 py-2 text-right">{emp.avgMonthlyPay.toLocaleString()}</td>
+                    <td className="border px-2 py-2 text-right font-semibold">
+                      {emp.benefit.toLocaleString()}
+                    </td>
+                    <td className="border px-2 py-2">
+                      {emp.isEligible && !emp.disqualified ? (
+                        <span className="text-green-600">지급가능</span>
+                      ) : (
+                        <span className="text-red-600">지급불가</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default RetirementBenefitSystem;
